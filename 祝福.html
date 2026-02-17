@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BLESS</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box
+    }
+
+    body {
+      background: #0f0f1a;
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+      overflow: hidden;
+      height: 100vh
+    }
+
+    /* 星光背景canvas */
+    #particles {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1
+    }
+
+    /* 输入面板高级UI */
+    #inputBox {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 99;
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(25px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 24px;
+      padding: 50px 40px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      transition: all 0.7s ease
+    }
+
+    #inputBox h2 {
+      font-size: 26px;
+      color: #fff;
+      margin-bottom: 30px;
+      font-weight: 500
+    }
+
+    #nameInput {
+      width: 280px;
+      padding: 16px 20px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.06);
+      color: #fff;
+      font-size: 17px;
+      outline: none;
+      transition: 0.3s
+    }
+
+    #nameInput:focus {
+      border-color: #ffdf70;
+      background: rgba(255, 255, 255, 0.1)
+    }
+
+    #startBtn {
+      margin-top: 24px;
+      padding: 15px 35px;
+      border-radius: 14px;
+      border: none;
+      background: linear-gradient(90deg, #ffd54f, #ffb74d);
+      color: #111;
+      font-size: 17px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: 0.3s;
+      box-shadow: 0 8px 20px rgba(255, 213, 79, 0.3)
+    }
+
+    #startBtn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 12px 28px rgba(255, 213, 79, 0.45)
+    }
+
+    /* 漂浮文字：柔和金色描边+弱发光，合适字号 */
+    .floatWord {
+      position: absolute;
+      font-size: 20px;
+      font-weight: bold;
+      white-space: nowrap;
+      pointer-events: none;
+      z-index: 10;
+      color: #ffffff;
+      text-shadow:
+        0 0 3px rgba(255, 223, 64, 0.5),
+        1px 1px 1px #000,
+        -1px -1px 1px #b8860b;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="particles"></canvas>
+
+  <div id="inputBox">
+    <h2>请输入你的名字</h2>
+    <input type="text" id="nameInput" placeholder="输入网名/昵称">
+    <button id="startBtn">开启祝福</button>
+  </div>
+
+  <script>
+    //==================== 全屏星光闪烁效果（优化版：缩小闪烁范围+彩色星星） ====================
+    const canvas = document.getElementById('particles');
+    const ctx = canvas.getContext('2d');
+    let stars = [];
+    // 星光数量，可自行调整，数字越大星空越密
+    const starCount = 90;
+    // 动画时间基准，保证闪烁平滑
+    let animationTime = 0;
+
+    // ========== 优化新增：彩色星星配色（柔和马卡龙色系，和页面风格统一） ==========
+    const starColors = [
+      "#ffd54f", // 暖黄
+      "#ff9bbb", // 柔粉
+      "#81c9fa", // 浅蓝
+      "#b6b1ff", // 淡紫
+      "#64ffda", // 青蓝
+      "#f472b6", // 玫粉
+      "#ffb84d", // 橙黄
+      "#34d399", // 薄荷绿
+      "#a78bfa", // 薰衣草紫
+      "#60a5fa"  // 晴空蓝
+    ];
+
+    // ========== 优化新增：十六进制颜色转RGB工具函数，用于生成透明彩色光晕 ==========
+    function hexToRgb(hex) {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return { r, g, b };
+    }
+
+    // 画布尺寸适配
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      // 窗口变化时重新生成星光，保证全屏铺满
+      initStars();
+    }
+
+    // 星光类：优化闪烁范围+彩色效果
+    class Star {
+      constructor() {
+        // 全屏随机固定位置
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * canvas.height;
+        // 基础大小，随机区分星光大小，更有层次
+        this.baseSize = Math.random() * 1.4 + 0.5;
+
+        // ========== 优化1：缩小闪烁范围，大幅缩小明暗差值 ==========
+        this.minOpacity = Math.random() * 0.15 + 0.3; // 最低亮度从0.05-0.2提升到0.3-0.45
+        this.maxOpacity = Math.random() * 0.2 + 0.65;  // 最高亮度从0.7-1.0降低到0.65-0.85
+        // 闪烁速度保持不变，保证呼吸感
+        this.twinkleSpeed = Math.random() * 0.02 + 0.01;
+        // 初始相位：完全错开闪烁时间，绝对不会同步闪烁
+        this.timeOffset = Math.random() * Math.PI * 2;
+
+        // ========== 优化2：给每个星星随机分配彩色 ==========
+        this.color = starColors[Math.floor(Math.random() * starColors.length)];
+        this.rgb = hexToRgb(this.color);
+      }
+
+      // 更新当前帧的透明度和大小，优化闪烁范围
+      update(currentTime) {
+        // 正弦函数实现平滑的呼吸闪烁
+        const sinValue = Math.sin(currentTime * this.twinkleSpeed + this.timeOffset);
+        // 映射到缩小后的透明度范围
+        this.opacity = this.minOpacity + (this.maxOpacity - this.minOpacity) * (sinValue + 1) / 2;
+        // ========== 优化1：缩小大小变化范围，配合闪烁范围优化 ==========
+        this.size = this.baseSize * (0.7 + 0.6 * (sinValue + 1) / 2);
+      }
+
+      // ========== 优化2：重绘彩色星光，三层光晕均使用对应彩色 ==========
+      draw(ctx) {
+        // 1. 绘制外围朦胧彩色光晕
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * 4, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${this.rgb.r}, ${this.rgb.g}, ${this.rgb.b}, ${this.opacity * 0.3})`;
+        ctx.fill();
+
+        // 2. 绘制星光次外层彩色光晕
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * 2, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${this.rgb.r}, ${this.rgb.g}, ${this.rgb.b}, ${this.opacity * 0.5})`;
+        ctx.fill();
+
+        // 3. 绘制彩色核心亮星
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${this.rgb.r}, ${this.rgb.g}, ${this.rgb.b}, ${this.opacity})`;
+        ctx.fill();
+      }
+    }
+
+    // 初始化星光
+    function initStars() {
+      stars = [];
+      for (let i = 0; i < starCount; i++) {
+        stars.push(new Star());
+      }
+    }
+
+    // 星光动画循环
+    function renderStars() {
+      // 清空画布
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      animationTime += 1;
+      // 更新并绘制每个星光
+      stars.forEach(star => {
+        star.update(animationTime);
+        star.draw(ctx);
+      });
+      // 持续循环
+      requestAnimationFrame(renderStars);
+    }
+
+    // 启动星光效果
+    resizeCanvas();
+    initStars();
+    renderStars();
+    // 监听窗口尺寸变化
+    window.addEventListener('resize', resizeCanvas);
+
+    //==================== 全局配置（7条字幕，每条固定出现3次，共21条） ====================
+    const texts = [
+      "{name} 保持好心情",
+      "{name} 好好爱自己",
+      "{name} 早日成为龙笔",
+      "祝{name}音游底力大增",
+      "{name} 天天开心",
+      "顺顺利利",
+      "期待下一次见面"
+    ];
+    // 10种优质柔和配色，适配21条字幕，最大程度减少重复
+    const colors = [
+      "#ffd54f", // 暖黄
+      "#ff9bbb", // 柔粉
+      "#81c9fa", // 浅蓝
+      "#b6b1ff", // 淡紫
+      "#64ffda", // 青蓝
+      "#f472b6", // 玫粉
+      "#ffb84d", // 橙黄
+      "#34d399", // 薄荷绿
+      "#a78bfa", // 薰衣草紫
+      "#60a5fa"  // 晴空蓝
+    ];
+    let userName = "";
+    const floatWords = [];
+    // 超慢匀速配置
+    const moveSpeed = 0.4;
+    // 固定总字幕数量：7条×3次=21条
+    const wordCount = 21;
+    // 每条字幕固定出现次数
+    const repeatTimes = 3;
+
+    //==================== 数组洗牌函数（防连续重复） ====================
+    function shuffleArray(arr) {
+      const newArr = [...arr];
+      for (let i = newArr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [newArr[i], newArr[j]] = [newArr[j], newArr[i]];
+      }
+      // 优化：避免连续相同的内容
+      for (let i = 0; i < newArr.length - 1; i++) {
+        if (newArr[i] === newArr[i + 1]) {
+          const swapIndex = (i + 2) % newArr.length;
+          [newArr[i + 1], newArr[swapIndex]] = [newArr[swapIndex], newArr[i + 1]];
+        }
+      }
+      return newArr;
+    }
+
+    //==================== 开始生成 ====================
+    const startBtn = document.getElementById('startBtn');
+    const nameInput = document.getElementById('nameInput');
+    const inputBox = document.getElementById('inputBox');
+
+    startBtn.onclick = () => {
+      const val = nameInput.value.trim();
+      if (!val) return;
+      userName = val;
+      inputBox.style.opacity = 0;
+      setTimeout(() => inputBox.remove(), 700);
+      initWords();
+      animate();
+    }
+
+    //==================== 创建字幕（精准控制次数+均匀分布） ====================
+    function initWords() {
+      // 1. 生成精准文案池：7条字幕，每条重复3次，总21条
+      let textPool = [];
+      for (let i = 0; i < repeatTimes; i++) {
+        textPool = textPool.concat([...texts]);
+      }
+      // 打乱文案池，防连续重复
+      const finalTextList = shuffleArray(textPool);
+
+      // 2. 适配21条字幕的网格布局：7列3行，均匀铺满全屏
+      const cols = 7; // 7列
+      const rows = 3; // 3行
+      const cellWidth = window.innerWidth / cols;
+      const cellHeight = window.innerHeight / rows;
+
+      // 3. 生成防重复的颜色列表
+      const shuffledColors = shuffleArray(colors);
+      // 循环拼接成21个颜色，适配总数量
+      const loopColorList = Array.from({ length: wordCount }, (_, i) => shuffledColors[i % shuffledColors.length]);
+      // 二次打乱，避免连续同色
+      const finalColorList = shuffleArray(loopColorList);
+
+      // 4. 循环生成21条字幕
+      for (let i = 0; i < wordCount; i++) {
+        // 错峰生成，避免一次性弹出，观感更柔和
+        setTimeout(() => {
+          const el = document.createElement("div");
+          el.className = "floatWord";
+          // 从预生成的文案列表取，保证每条刚好出现3次，自动替换网名
+          const text = finalTextList[i].replace("{name}", userName);
+          el.innerText = text;
+          // 分配预先生成的防重复颜色
+          el.style.color = finalColorList[i];
+          document.body.appendChild(el);
+
+          // 获取字幕实际宽高
+          const width = el.offsetWidth;
+          const height = el.offsetHeight;
+
+          // 计算网格内的初始位置，均匀分散不扎堆
+          const col = i % cols;
+          const row = Math.floor(i / cols);
+          // 网格内随机偏移，不呆板，同时保证不重叠
+          const baseX = col * cellWidth;
+          const baseY = row * cellHeight;
+          const randomX = baseX + Math.random() * (cellWidth - width);
+          const randomY = baseY + Math.random() * (cellHeight - height);
+
+          // 固定速度大小，仅随机方向，保证匀速不混乱
+          const angle = Math.random() * Math.PI * 2;
+          const vx = Math.cos(angle) * moveSpeed;
+          const vy = Math.sin(angle) * moveSpeed;
+
+          // 存储字幕信息
+          floatWords.push({
+            el: el,
+            width: width,
+            height: height,
+            x: randomX,
+            y: randomY,
+            vx: vx,
+            vy: vy,
+          })
+        }, i * 140); // 每个字幕间隔140ms生成，21条总时长约3秒，节奏刚好
+      }
+    }
+
+    //==================== 核心动画：边界反弹+匀速飘动 ====================
+    function animate() {
+      const winWidth = window.innerWidth;
+      const winHeight = window.innerHeight;
+
+      floatWords.forEach(obj => {
+        // 更新位置
+        obj.x += obj.vx;
+        obj.y += obj.vy;
+
+        // 精准边界反弹，不超出屏幕
+        if (obj.x <= 0) { obj.x = 0; obj.vx *= -1; }
+        if (obj.x + obj.width >= winWidth) { obj.x = winWidth - obj.width; obj.vx *= -1; }
+        if (obj.y <= 0) { obj.y = 0; obj.vy *= -1; }
+        if (obj.y + obj.height >= winHeight) { obj.y = winHeight - obj.height; obj.vy *= -1; }
+
+        // 渲染到页面
+        obj.el.style.left = obj.x + "px";
+        obj.el.style.top = obj.y + "px";
+      })
+
+      requestAnimationFrame(animate);
+    }
+
+    //==================== 窗口大小变化适配 ====================
+    window.onresize = () => {
+      const winWidth = window.innerWidth;
+      const winHeight = window.innerHeight;
+      floatWords.forEach(obj => {
+        obj.x = Math.min(obj.x, winWidth - obj.width);
+        obj.y = Math.min(obj.y, winHeight - obj.height);
+      })
+    }
+  </script>
+</body>
+
+</html>
